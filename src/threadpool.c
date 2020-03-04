@@ -1,20 +1,26 @@
 #include "threadpool.h"
 
+#define NL "\n"
+
 static void *worker(void* arg);
-static void force_dismiss(struct threadpool *pool);
-static void upscale(struct threadpool *pool, unsigned int n);
-static void downscale(struct threadpool *pool, unsigned int n);
+//static void  force_dismiss(struct threadpool *pool);
+static void  upscale(struct threadpool *pool, unsigned int n);
+static void  downscale(struct threadpool *pool, unsigned int n);
 
 static
 void *worker(void *arg){
     struct thread_ctx *tctx;
     struct threadpool *pool;
-    struct pthread_mutex_t *lock;
-    struct pthread_cond_t  *cond;
+    pthread_mutex_t *lock;
+    pthread_cond_t  *cond;
     struct jobinfo *job  = NULL;
+    struct list *tmp_node = NULL;
     struct list *jobhead = NULL;
     int was_working  = 0;
     uint64_t const efd_buf = 1;
+    
+    assert(arg != NULL);
+    
     // avoid double pointer access
     tctx    = (struct thread_ctx*)arg;
     pool    = tctx->pool;
@@ -22,8 +28,10 @@ void *worker(void *arg){
     cond    = &pool->cond;
     jobhead = &pool->jobq;
 
+    printf("[%lX] is ready"NL, tctx->tid);
     for (;;){
         pthread_mutex_lock(lock);
+        printf("[%lX] main lock acquired"NL, tctx->tid);
         if (was_working){
             pool->n_idle++;
             was_working = 0;
@@ -35,16 +43,21 @@ void *worker(void *arg){
                 if (list_is_empty(&tctx->node)){
                     // we're poped from `threadq`, now the thread
                     // handles itself
+                    printf("[\x1b[1;31m%lX\x1b[0m] being downscaled"NL, tctx->tid);
                     free(tctx);
+                } else {
+                    printf("[%lX] terminated"NL, tctx->tid);
                 }
                 pthread_mutex_unlock(lock);
                 goto end;
             }
             if (!list_is_empty(jobhead) && !pool->is_paused){
-                job = list_get(jobhead);
+                tmp_node = list_get(jobhead);
+                job = list_entry(tmp_node, struct jobinfo, node);
                 pool->n_idle--;
                 pool->pending_jobs--;
                 was_working = 1;
+                printf("[%lX] get to work"NL, tctx->tid);
                 pthread_mutex_unlock(lock);
                 break;
             } else {
@@ -53,13 +66,15 @@ void *worker(void *arg){
                     // `no_working` eventfd
                     // ^(the new worker join during pausing/no job would
                     //   write as well)
+                    printf("[%lX] last worker gate open"NL, tctx->tid);
                     write(pool->no_working, &efd_buf, sizeof(uint64_t));
                 }
             }
-        standby:
+            printf("[%lX] no job to do"NL, tctx->tid);
             pthread_cond_wait(cond, lock);
         }
         job->func(job->arg);
+        free(job);
     }
 end:
     pthread_exit(NULL); // never return to the caller
@@ -79,9 +94,12 @@ void upscale(struct threadpool *pool, unsigned int n){
     n_idle += n
     release lock
     */
+    printf("[TP] upscale by %d"NL, n);
+    
     pthread_mutex_lock(&pool->lock);
     for (unsigned int i = 0 ; i < n; ++i){
         tmp = calloc(1, sizeof(struct thread_ctx));
+        tmp->pool = pool;
         list_push(&pool->threadq, &tmp->node);
         pthread_create(&tmp->tid, NULL, worker, tmp);
     }
@@ -109,13 +127,15 @@ void downscale(struct threadpool *pool, unsigned int n){
     release lock
     ...
     */
+
+    printf("[TP] downscale by %d"NL, n);
+
     pthread_mutex_lock(&pool->lock);
     for (unsigned int i = 0; i < n; ++i){
         tmp_node = list_get(&pool->threadq);
         tmp_ctx = list_entry(tmp_node, struct thread_ctx, node);
         tmp_ctx->is_terminated = 1;
         pthread_detach(tmp_ctx->tid);
-
     }
     pool->n_workers -= n;
     pool->n_idle    -= n;
@@ -162,10 +182,17 @@ void threadpool_wait(struct threadpool *pool){
         pthread_mutex_unlock(&pool->lock);
         return;
     }
+    pthread_mutex_unlock(&pool->lock);
+
+    printf("[TP] waiting for jobs complete"NL);
+
     read(pool->no_working, &efd_buf, sizeof(uint64_t));
     efd_buf = 1;
     write(pool->no_working, &efd_buf, sizeof(uint64_t));
-    pthread_mutex_unlock(&pool->lock);
+    // put is back in case other API depends on this deadlocks.
+
+    assert(pool->pending_jobs == 0);
+
     return;
 }
 
@@ -194,6 +221,10 @@ int threadpool_pause(struct threadpool *pool){
     read(pool->no_working, &efd_buf, sizeof(uint64_t));
     efd_buf = 1;
     write(pool->no_working, &efd_buf, sizeof(uint64_t));
+
+    printf("[TP] start pause"NL);
+
+    // put is back in case other API depends on this deadlocks.
     return 0;
 }
 // a `force_pause` method (using a signal slot)?
@@ -220,6 +251,9 @@ int threadpool_resume(struct threadpool *pool){
     read(pool->no_working, &efd_buf, sizeof(uint64_t));
     // does it guarenteed during pause, `no_working` always readable?
     pthread_cond_broadcast(&pool->cond);
+    
+    printf("[TP] resume from pause"NL);
+    
     pthread_mutex_unlock(&pool->lock);
     return 0;
 }
@@ -245,11 +279,21 @@ int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
     tmp_job = calloc(1, sizeof(struct jobinfo));
     tmp_job->func = func;
     tmp_job->arg = arg;
-    list_push(&pool->jobq, tmp_job);
+    list_push(&pool->jobq, &tmp_job->node);
     pool->pending_jobs++;
 
+    printf("[TP] submit job"NL);
+
+    /*
+        FIXME:
+        1)  multiple `submit` before threads get into work area
+            caused `submit` deadlocks on the `read`.
+        2)  some submitted jobs are lost? maybe error in list
+            `list_is_empty`?
+    */
+
     if (!pool->is_paused && pool->n_idle != 0){
-        if (pool->n_idle == pool->n_workers){
+        if ((pool->n_idle == pool->n_workers) && (pool->pending_jobs == 0)){
             // every worker is waiting
             read(pool->no_working, &efd_buf, sizeof(uint64_t));
         }
@@ -291,13 +335,21 @@ void threadpool_free(struct threadpool *pool){
     }
     pthread_mutex_unlock(&pool->lock);
 
-    read(pool->no_working, &efd_buf, sizeof(uint64_t));
-    // or not necessary?
+    // don't read on `no_working` - if they're all running and terminate
+    // flag sets, no thread is going to write(or say set) the `no_working`
+    // flag.
+
+    if (!list_is_empty(&pool->threadq)){
+        list_traverse(&pool->threadq, tmp_node){
+            tmp_tctx = list_entry(tmp_node, struct thread_ctx, node);
+            printf("[TP] joining %lX"NL, tmp_tctx->tid);
+            pthread_join(tmp_tctx->tid, NULL);
+        }
+    }
 
     for (;!list_is_empty(&pool->threadq);){
         tmp_node = list_pop(&pool->threadq);
         tmp_tctx = list_entry(tmp_node, struct thread_ctx, node);
-        pthread_join(tmp_tctx->tid, NULL);
         free(tmp_tctx);
     }
     tmp_tctx = NULL;
@@ -327,7 +379,7 @@ int threadpool_scale_to(struct threadpool *pool, unsigned int n){
     else:
         upscale(n - n_workers)
     */
-    if (n == pool->n_workers){
+    if (n == pool->n_workers || n >= MAX_WORKERS){
         return 0;
     }
     if (n < pool->n_workers){

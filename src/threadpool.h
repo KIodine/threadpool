@@ -1,6 +1,7 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -10,20 +11,22 @@
 
 #include "list.h"
 
+#define MAX_WORKERS 128UL
+
 /*
     - cleanup when thread terminates accidentally?
 */
 
 struct threadpool {
-    int             n_workers;
-    int             n_idle;
-    int             is_paused;
+    unsigned int    n_workers;
+    unsigned int    n_idle;
+    unsigned int    is_paused;
     struct list     threadq;
     struct list     jobq;
-    int             pending_jobs;
+    unsigned int    pending_jobs;
     pthread_mutex_t lock;
     pthread_cond_t  cond;
-    eventfd_t no_working;
+    eventfd_t       no_working;
 };
 /*
     the eventfd saved one independant conditional lock and provided

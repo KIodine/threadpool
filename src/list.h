@@ -17,7 +17,7 @@ struct list {
 #define list_init(ident) {\
     struct list *__tmp = &(ident); __tmp->prev=__tmp; __tmp->next=__tmp;\
 }
-#define list_is_empty(node) ((node)->prev == (node)->next)
+#define list_is_empty(node) ((node)->prev == (node))
 
 void         list_push(struct list *head, struct list *node);
 struct list *list_pop(struct list *head);
