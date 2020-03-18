@@ -1,8 +1,6 @@
 # Scalable Threadpool in C
 
-!Still work in progess!
-
-A primitive version of threadpool implemente in C language.
+A primitive threadpool implemente in C language.
 
 Note this code is currently Linux-specific (because of the use of `eventfd`).
 

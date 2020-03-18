@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
 #include <assert.h>
 #include <sys/eventfd.h>
@@ -20,10 +21,10 @@
 
 /*
     TODO:
-    - [ ] STRICT fail check
+    - [X] STRICT fail check on alloc
     - [X] use debug print (follow the `assert` disable method)
-    - [ ] use C style comment
-    - [ ] static and shared build makefile
+    - [X] use C style comment
+    - [X] static and shared build makefile
 */
 
 
