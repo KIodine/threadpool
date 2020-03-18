@@ -2,10 +2,21 @@
 
 #define NL "\n"
 
+
+/* follow `assert` method */
+#ifndef NDEBUG
+    #define MSG_PREFIX "[ThreadPool] "
+    #define debug_printf(fmt, ...) printf(MSG_PREFIX fmt, ##__VA_ARGS__)
+#else
+    #define MSG_PREFIX
+    #define debug_printf(ignore) ((void)0)
+#endif
+
+
 static void *worker(void* arg);
-//static void  force_dismiss(struct threadpool *pool);
 static void  upscale(struct threadpool *pool, unsigned int n);
 static void  downscale(struct threadpool *pool, unsigned int n);
+
 
 static
 void *worker(void *arg){
@@ -13,9 +24,9 @@ void *worker(void *arg){
     struct threadpool *pool;
     pthread_mutex_t *lock;
     pthread_cond_t  *cond;
-    struct jobinfo *job  = NULL;
+    struct jobinfo *job   = NULL;
     struct list *tmp_node = NULL;
-    struct list *jobhead = NULL;
+    struct list *jobhead  = NULL;
     int was_working  = 0;
     uint64_t const efd_buf = 1;
     
@@ -28,10 +39,10 @@ void *worker(void *arg){
     cond    = &pool->cond;
     jobhead = &pool->jobq;
 
-    printf("[%lX] is ready"NL, tctx->tid);
+    debug_printf("[%lX] is ready"NL, tctx->tid);
     for (;;){
         pthread_mutex_lock(lock);
-        printf("[%lX] main lock acquired"NL, tctx->tid);
+        debug_printf("[%lX] main lock acquired"NL, tctx->tid);
         if (was_working){
             pool->n_idle++;
             was_working = 0;
@@ -43,10 +54,10 @@ void *worker(void *arg){
                 if (list_is_empty(&tctx->node)){
                     // we're poped from `threadq`, now the thread
                     // handles itself
-                    printf("[\x1b[1;31m%lX\x1b[0m] being downscaled"NL, tctx->tid);
+                    debug_printf("[\x1b[1;31m%lX\x1b[0m] being downscaled"NL, tctx->tid);
                     free(tctx);
                 } else {
-                    printf("[%lX] terminated"NL, tctx->tid);
+                    debug_printf("[%lX] terminated"NL, tctx->tid);
                 }
                 pthread_mutex_unlock(lock);
                 goto end;
@@ -57,7 +68,7 @@ void *worker(void *arg){
                 pool->n_idle--;
                 pool->pending_jobs--;
                 was_working = 1;
-                printf("[%lX] get to work"NL, tctx->tid);
+                debug_printf("[%lX] get to work"NL, tctx->tid);
                 pthread_mutex_unlock(lock);
                 break;
             } else {
@@ -66,11 +77,11 @@ void *worker(void *arg){
                     // `no_working` eventfd
                     // ^(the new worker join during pausing/no job would
                     //   write as well)
-                    printf("[%lX] last worker gate open"NL, tctx->tid);
+                    debug_printf("[%lX] last worker gate open"NL, tctx->tid);
                     write(pool->no_working, &efd_buf, sizeof(uint64_t));
                 }
             }
-            printf("[%lX] no job to do"NL, tctx->tid);
+            debug_printf("[%lX] no job to do"NL, tctx->tid);
             pthread_cond_wait(cond, lock);
         }
         job->func(job->arg);
@@ -94,7 +105,7 @@ void upscale(struct threadpool *pool, unsigned int n){
     n_idle += n
     release lock
     */
-    printf("[TP] upscale by %d"NL, n);
+    debug_printf("upscale by %d"NL, n);
     
     pthread_mutex_lock(&pool->lock);
     for (unsigned int i = 0 ; i < n; ++i){
@@ -128,7 +139,7 @@ void downscale(struct threadpool *pool, unsigned int n){
     ...
     */
 
-    printf("[TP] downscale by %d"NL, n);
+    debug_printf("downscale by %d"NL, n);
 
     pthread_mutex_lock(&pool->lock);
     for (unsigned int i = 0; i < n; ++i){
@@ -184,7 +195,7 @@ void threadpool_wait(struct threadpool *pool){
     }
     pthread_mutex_unlock(&pool->lock);
 
-    printf("[TP] waiting for jobs complete"NL);
+    debug_printf("waiting for jobs complete"NL);
 
     read(pool->no_working, &efd_buf, sizeof(uint64_t));
     efd_buf = 1;
@@ -222,7 +233,7 @@ int threadpool_pause(struct threadpool *pool){
     efd_buf = 1;
     write(pool->no_working, &efd_buf, sizeof(uint64_t));
 
-    printf("[TP] start pause"NL);
+    debug_printf("start pause"NL);
 
     // put is back in case other API depends on this deadlocks.
     return 0;
@@ -252,7 +263,7 @@ int threadpool_resume(struct threadpool *pool){
     // does it guarenteed during pause, `no_working` always readable?
     pthread_cond_broadcast(&pool->cond);
     
-    printf("[TP] resume from pause"NL);
+    debug_printf("[TP] resume from pause"NL);
     
     pthread_mutex_unlock(&pool->lock);
     return 0;
@@ -282,7 +293,7 @@ int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
     list_push(&pool->jobq, &tmp_job->node);
     pool->pending_jobs++;
 
-    printf("[TP] submit job"NL);
+    debug_printf("submit job"NL);
 
     /*
         FIXME:
@@ -342,7 +353,7 @@ void threadpool_free(struct threadpool *pool){
     if (!list_is_empty(&pool->threadq)){
         list_traverse(&pool->threadq, tmp_node){
             tmp_tctx = list_entry(tmp_node, struct thread_ctx, node);
-            printf("[TP] joining %lX"NL, tmp_tctx->tid);
+            debug_printf("joining %lX"NL, tmp_tctx->tid);
             pthread_join(tmp_tctx->tid, NULL);
         }
     }
@@ -380,7 +391,7 @@ int threadpool_scale_to(struct threadpool *pool, unsigned int n){
         upscale(n - n_workers)
     */
     if (n == pool->n_workers || n >= MAX_WORKERS){
-        return 0;
+        return -1;
     }
     if (n < pool->n_workers){
         downscale(pool, pool->n_workers - n);

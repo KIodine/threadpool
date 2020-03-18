@@ -15,7 +15,17 @@
 
 /*
     - cleanup when thread terminates accidentally?
+      -> just let them die, hiding no bug
 */
+
+/*
+    TODO:
+    - [ ] STRICT fail check
+    - [X] use debug print (follow the `assert` disable method)
+    - [ ] use C style comment
+    - [ ] static and shared build makefile
+*/
+
 
 struct threadpool {
     unsigned int    n_workers;
