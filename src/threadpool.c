@@ -84,7 +84,9 @@ void *worker(void *arg){
                         write as well)
                     */
                     debug_printf("[%lX] last worker gate open"NL, tctx->tid);
-                    write(pool->no_working, &efd_buf, sizeof(uint64_t));
+                    // TODO: use `gate_lock` instead.
+                    /* Open the waiting "gate". */
+                    gate_unlock(pool->wgate);
                 }
             }
             debug_printf("[%lX] no job to do"NL, tctx->tid);
@@ -152,6 +154,7 @@ unsigned int downscale(struct threadpool *pool, unsigned int n){
 
 struct threadpool *threadpool_alloc(void){
     struct threadpool *pool;
+    struct gate *gate;
     int ret, tmpfd;
     const uint64_t efd_buf = 1;
     
@@ -160,14 +163,13 @@ struct threadpool *threadpool_alloc(void){
     list_init(pool->threadq);
     list_init(pool->jobq);
 
-    tmpfd = eventfd(0, 0);
-    if (tmpfd == -1){
-        perror("create eventfd");
-        goto err_evfd;
+    // TODO: use `gate_lock` instead.
+    gate = gate_alloc();
+    if (gate == NULL){
+        perror("Create gate");
+        goto err_gate;
     }
-    pool->no_working = tmpfd;
-    
-    write(pool->no_working, &efd_buf, sizeof(uint64_t));
+    pool->wgate = gate;
     
     ret = pthread_mutex_init(&pool->lock, NULL);
     if (ret != 0){
@@ -187,8 +189,8 @@ struct threadpool *threadpool_alloc(void){
 err_cond:
     pthread_mutex_destroy(&pool->lock);
 err_lock:
-    close(tmpfd);
-err_evfd:
+    gate_free(pool->wgate);
+err_gate:
     free(pool);
     return NULL;
 }
@@ -205,10 +207,10 @@ void threadpool_wait(struct threadpool *pool){
 
     debug_printf("waiting for jobs complete"NL);
 
-    read(pool->no_working, &efd_buf, sizeof(uint64_t));
-    efd_buf = 1;
-    write(pool->no_working, &efd_buf, sizeof(uint64_t));
-    /* put is back in case other API depends on this deadlocks. */
+    // TODO: use `gate_lock` instead.
+    /* Wait until last worker opens the waiting "gate". */
+    gate_wait(pool->wgate);
+    /* put this back in case other API depends on this deadlocks. */
 
     assert(pool->pending_jobs == 0);
 
@@ -226,9 +228,9 @@ int threadpool_pause(struct threadpool *pool){
     pool->is_paused = 1;
     pthread_mutex_unlock(&pool->lock);
 
-    read(pool->no_working, &efd_buf, sizeof(uint64_t));
-    efd_buf = 1;
-    write(pool->no_working, &efd_buf, sizeof(uint64_t));
+    // TODO: use `gate_lock` instead.
+    /* Wait for the last worker opens the "gate". */
+    gate_wait(pool->wgate);
 
     debug_printf("start pause"NL);
 
@@ -244,8 +246,9 @@ int threadpool_resume(struct threadpool *pool){
         pthread_mutex_unlock(&pool->lock);
     }
     pool->is_paused = 0;
-    read(pool->no_working, &efd_buf, sizeof(uint64_t));
-    /* does it guarenteed during pause, `no_working` always readable? */
+    // TODO: use `gate_lock` instead.
+    gate_lock(pool->wgate);
+    
     pthread_cond_broadcast(&pool->cond);
     
     debug_printf("[TP] resume from pause"NL);
@@ -271,7 +274,15 @@ int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
     if (!pool->is_paused && pool->n_idle != 0){
         if ((pool->n_idle == pool->n_workers) && (pool->pending_jobs == 0)){
             /* every worker is waiting */
-            read(pool->no_working, &efd_buf, sizeof(uint64_t));
+            // TODO: use `gate` instead.
+            /* Clear the `no_working` flag. */
+            /*
+                Only several functions can change the state of "gate":
+                1) `submit` and `resume` lock the gate.
+                2) (the last) worker thread unlocks the gate.
+                Other APIs do not change the state of gate.
+            */
+            gate_lock(pool->wgate);
         }
         pthread_cond_signal(&pool->cond);
     }
@@ -295,11 +306,6 @@ void threadpool_free(struct threadpool *pool){
     }
     pthread_mutex_unlock(&pool->lock);
 
-    /*
-        don't read on `no_working` - if they're all running and terminate
-        flag sets, no thread is going to write(or say set) the `no_working`
-        flag.
-    */
 
     if (!list_is_empty(&pool->threadq)){
         list_traverse(&pool->threadq, tmp_node){
@@ -323,7 +329,8 @@ void threadpool_free(struct threadpool *pool){
     }
     tmp_job = NULL;
 
-    close(pool->no_working);
+    // TODO: use `gate` instead.
+    gate_free(pool->wgate);
     pthread_mutex_destroy(&pool->lock);
     pthread_cond_destroy(&pool->cond);
 

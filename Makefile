@@ -8,7 +8,7 @@ VFLAGS := --show-leak-kinds=all --leak-check=full --verbose
 SRCDIR := ./src
 LIBDIR := ./lib
 BINDST := ./bin
-OBJS := list.o threadpool.o
+OBJS := list.o threadpool.o gate.o
 TEST := main.o
 
 OBJDIR := ${addprefix $(SRCDIR)/, $(OBJS)}

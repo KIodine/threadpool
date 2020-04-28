@@ -11,6 +11,7 @@
 #include <sys/eventfd.h>
 
 #include "list.h"
+#include "gate.h"
 
 #define MAX_WORKERS 128UL
 
@@ -27,7 +28,6 @@
     - [X] static and shared build makefile
 */
 
-
 struct threadpool {
     unsigned int    n_workers;
     unsigned int    n_idle;
@@ -38,6 +38,7 @@ struct threadpool {
     pthread_mutex_t lock;
     pthread_cond_t  cond;
     eventfd_t       no_working;
+    struct gate    *wgate;
 };
 /*
     the eventfd saved one independant conditional lock and provided
