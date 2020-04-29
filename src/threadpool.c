@@ -28,7 +28,6 @@ void *worker(void *arg){
     struct list *tmp_node = NULL;
     struct list *jobhead  = NULL;
     int was_working  = 0;
-    uint64_t const efd_buf = 1;
     
     assert(arg != NULL);
     
@@ -49,15 +48,11 @@ void *worker(void *arg){
         }
         for (;;){
             if (tctx->is_terminated){
-                /*
-                    if we're not "pop"ed, there is at least one node we
-                    connect to -- the head node
-                */
+                /* if we're not "pop"ed, there is at least one node we
+                    connect to: the head node. */
                 if (list_is_empty(&tctx->node)){
-                    /*
-                        we're poped from `threadq`, now the thread
-                        handles itself
-                    */
+                    /* we're poped from `threadq`, now the thread
+                        handles itself. */
                     debug_printf("[\x1b[1;31m%lX\x1b[0m] being downscaled"NL, tctx->tid);
                     free(tctx);
                 } else {
@@ -77,14 +72,9 @@ void *worker(void *arg){
                 break;
             } else {
                 if (pool->n_idle == pool->n_workers){
-                    /*
-                        the last worker here would write the
-                        `no_working` eventfd
-                        ^(the new worker join during pausing/no job would
-                        write as well)
-                    */
+                    /* the last worker here would unlock the gate,
+                        letting the waiters go. */
                     debug_printf("[%lX] last worker gate open"NL, tctx->tid);
-                    // TODO: use `gate_lock` instead.
                     /* Open the waiting "gate". */
                     gate_unlock(pool->wgate);
                 }
@@ -96,7 +86,7 @@ void *worker(void *arg){
         free(job);
     }
 end:
-    pthread_exit(NULL); /* never return to the caller */
+    pthread_exit(NULL);
 }
 
 
@@ -155,15 +145,13 @@ unsigned int downscale(struct threadpool *pool, unsigned int n){
 struct threadpool *threadpool_alloc(void){
     struct threadpool *pool;
     struct gate *gate;
-    int ret, tmpfd;
-    const uint64_t efd_buf = 1;
+    int ret;
     
     /* always returns a "valid" pointer on Linux, until killed by oom */
     pool = calloc(1, sizeof(struct threadpool));
     list_init(pool->threadq);
     list_init(pool->jobq);
 
-    // TODO: use `gate_lock` instead.
     gate = gate_alloc();
     if (gate == NULL){
         perror("Create gate");
@@ -174,14 +162,14 @@ struct threadpool *threadpool_alloc(void){
     ret = pthread_mutex_init(&pool->lock, NULL);
     if (ret != 0){
         errno = ret;
-        perror("create mutex");
+        perror("Create mutex");
         goto err_lock;
     }
 
     ret = pthread_cond_init(&pool->cond, NULL);
     if (ret != 0){
         errno = ret;
-        perror("create cond");
+        perror("Create cond");
         goto err_cond;
     }
 
@@ -196,7 +184,6 @@ err_gate:
 }
 
 void threadpool_wait(struct threadpool *pool){
-    uint64_t efd_buf = 0;
 
     pthread_mutex_lock(&pool->lock);
     if (pool->is_paused){
@@ -207,18 +194,15 @@ void threadpool_wait(struct threadpool *pool){
 
     debug_printf("waiting for jobs complete"NL);
 
-    // TODO: use `gate_lock` instead.
     /* Wait until last worker opens the waiting "gate". */
     gate_wait(pool->wgate);
-    /* put this back in case other API depends on this deadlocks. */
-
+    
     assert(pool->pending_jobs == 0);
 
     return;
 }
 
 int threadpool_pause(struct threadpool *pool){
-    uint64_t efd_buf = 0;
 
     pthread_mutex_lock(&pool->lock);
     if (pool->n_workers == 0 || pool->is_paused){
@@ -228,25 +212,22 @@ int threadpool_pause(struct threadpool *pool){
     pool->is_paused = 1;
     pthread_mutex_unlock(&pool->lock);
 
-    // TODO: use `gate_lock` instead.
     /* Wait for the last worker opens the "gate". */
     gate_wait(pool->wgate);
 
     debug_printf("start pause"NL);
 
-    /* put is back in case other API depends on this deadlocks. */
     return 0;
 }
 
 int threadpool_resume(struct threadpool *pool){
-    uint64_t efd_buf = 0;
 
     pthread_mutex_lock(&pool->lock);
     if (pool->n_workers == 0 || !pool->is_paused){
         pthread_mutex_unlock(&pool->lock);
     }
     pool->is_paused = 0;
-    // TODO: use `gate_lock` instead.
+
     gate_lock(pool->wgate);
     
     pthread_cond_broadcast(&pool->cond);
@@ -259,7 +240,6 @@ int threadpool_resume(struct threadpool *pool){
 
 int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
     struct jobinfo *tmp_job;
-    uint64_t efd_buf = 0;
 
     pthread_mutex_lock(&pool->lock);
     
@@ -273,9 +253,8 @@ int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
 
     if (!pool->is_paused && pool->n_idle != 0){
         if ((pool->n_idle == pool->n_workers) && (pool->pending_jobs == 0)){
-            /* every worker is waiting */
-            // TODO: use `gate` instead.
-            /* Clear the `no_working` flag. */
+            /* every worker is waiting, lock the gate so the blocking
+               API works. */
             /*
                 Only several functions can change the state of "gate":
                 1) `submit` and `resume` lock the gate.
@@ -329,7 +308,6 @@ void threadpool_free(struct threadpool *pool){
     }
     tmp_job = NULL;
 
-    // TODO: use `gate` instead.
     gate_free(pool->wgate);
     pthread_mutex_destroy(&pool->lock);
     pthread_cond_destroy(&pool->cond);
@@ -340,8 +318,10 @@ void threadpool_free(struct threadpool *pool){
 }
 
 int threadpool_scale_to(struct threadpool *pool, unsigned int n){
-    if (n == pool->n_workers || n >= MAX_WORKERS){
-        /* no size change or touched hard limit */
+    if (n == pool->n_workers){
+        return n;
+    } else if (n >= MAX_WORKERS){
+        /* Touched hard limit. */
         return -1;
     }
     if (n < pool->n_workers){

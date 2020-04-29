@@ -56,6 +56,7 @@ check: test_build
 
 clean:
 	rm -f $(OBJDIR) $(TEST)
+	rm -f $(BINDST)/$(BIN)
 
 clean_all: clean
 	rm -f ./$(BINDST)/$(BIN) $(LIBDIR)/$(STATICLIB) $(LIBDIR)/$(SHAREDLIB)

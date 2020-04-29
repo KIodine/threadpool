@@ -37,20 +37,8 @@ struct threadpool {
     unsigned int    pending_jobs;
     pthread_mutex_t lock;
     pthread_cond_t  cond;
-    eventfd_t       no_working;
     struct gate    *wgate;
 };
-/*
-    the eventfd saved one independant conditional lock and provided
-    some important attribute -- a wake mechanism without yielding control
-    flow and can be waited (though pipe might do the same thing).
-    --> equivalent to a waitable(or say, blocking) one/low capacity queue
-    but there is several questions -- does it saves more space compare
-    to using the lock? and does it faster?
-    if so, how much? -> find out the size of lock, cond lock and eventfd
-
-    On other platform, one might use conditional lock to simulate eventfd.
-*/
 
 struct thread_ctx {
     pthread_t          tid;
