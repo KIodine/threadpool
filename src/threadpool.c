@@ -13,6 +13,20 @@
 #endif
 
 
+struct thread_ctx {
+    pthread_t          tid;
+    struct threadpool *pool;
+    int                is_terminated;
+    struct list        node;
+};
+
+struct jobinfo {
+    void *(*func)(void*);
+    void       *arg;
+    struct list node;
+};
+
+
 static void *worker(void* arg);
 static unsigned int upscale(struct threadpool *pool, unsigned int n);
 static unsigned int downscale(struct threadpool *pool, unsigned int n);

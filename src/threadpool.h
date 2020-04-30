@@ -8,7 +8,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <assert.h>
-#include <sys/eventfd.h>
 
 #include "list.h"
 #include "gate.h"
@@ -39,20 +38,6 @@ struct threadpool {
     pthread_cond_t  cond;
     struct gate    *wgate;
 };
-
-struct thread_ctx {
-    pthread_t          tid;
-    struct threadpool *pool;
-    int                is_terminated;
-    struct list        node;
-};
-
-struct jobinfo {
-    void *(*func)(void*);
-    void       *arg;
-    struct list node;
-};
-
 
 struct threadpool *threadpool_alloc(void);
 void threadpool_free(struct threadpool *pool);
