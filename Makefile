@@ -1,62 +1,78 @@
-CC := cc
-DBG := -O0 -g
-CFLAGS := -Wall -Wextra -pthread -D_REENTRANT
+CC := gcc
+CFLAG := -Wall -Wextra -pthread -D_REENTRANT
+CDBGF := -g -O0
 
 VG := valgrind
-VFLAGS := --show-leak-kinds=all --leak-check=full --verbose
+VFLAG := --leak-check=full --show-leak-kinds=all --verbose
 
+PROJECT_NAME := stp
+
+INCDIR := ./src
 SRCDIR := ./src
+TSTDIR := ./test
 LIBDIR := ./lib
-BINDST := ./bin
-OBJS := list.o threadpool.o gate.o
+OBJDIR := ./obj
+BINDIR := ./bin
+
+CFLAG += -I$(INCDIR)
+# beware of the order of obj files, `ld` handles each obj file with
+# the order these file inputs and will not look back for "unsatisfied"
+# symbols.
+OBJS := \
+	threadpool.o gate.o list.o
 TEST := main.o
 
-OBJDIR := ${addprefix $(SRCDIR)/, $(OBJS)}
-
 BIN := main
+LIB := lib$(PROJECT_NAME)
 
-STATICLIB := threadpool.a
-SHAREDLIB := threadpool.so
+OBJDST := $(addprefix $(OBJDIR)/, $(OBJS))
+BINDST := $(BINDIR)/$(BIN)
+TSTDST := $(OBJDIR)/$(TEST)
 
 ifdef DEBUG
-	CFLAGS += $(DBG)
+	CFLAG += $(CDBGF)
 else
-	CFLAGS += -DNDEBUG
+	CFLAG += -DNDEBUG -O1
 endif
 
-# TODO: 
-#  	build from src, compile into obj,
-#	link to lib, executable in bin
+# make directories
+create_objdir:
+	@mkdir -p $(OBJDIR)
 
-.PHONY: all run check clean clean_all
-_ := $(shell mkdir -p $(BINDST))
-
-all: test_build static shared
-
-test_build: $(OBJDIR) $(TEST)
-	$(CC) $(CFLAGS) $^ -o $(BINDST)/$(BIN)
+create_bindir:
+	@mkdir -p $(BINDIR)
 
 create_libdir:
 	@mkdir -p $(LIBDIR)
 
-static: $(OBJDIR) create_libdir
-	ar rcs $(LIBDIR)/$(STATICLIB) $(OBJDIR)
+build_test: $(OBJDST) create_bindir static testmain
+	$(CC) $(CFLAG) -L./$(LIBDIR) -l$(PROJECT_NAME) -o $(BINDST) \
+	$(OBJDST) $(TSTDST)
 
-shared: $(OBJDIR) create_libdir
-	$(CC) -fPIC -shared $(OBJDIR) -o $(LIBDIR)/$(SHAREDLIB)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c create_objdir
+	$(CC) $(CFLAG) -c $< -o $@
 
-run: test_build
-	./$(BINDST)/$(BIN)
+testmain:
+	$(CC) $(CFLAG) -c $(TSTDIR)/main.c -o $(TSTDST)
 
-check: test_build
-	$(VG) $(VFLAGS) ./$(BINDST)/$(BIN)
+check: build_test
+	sudo $(VG) $(VFLAG) $(BINDST)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+static: $(OBJDST) create_libdir
+	ar -rcs $(LIBDIR)/$(LIB).a $(OBJDST)
+
+# Set target-specific var.
+shared: CFLAG += -fPIC
+shared: $(OBJDST) create_libdir
+	$(CC) -shared $(CFLAG) $(OBJDST) -o $(LIBDIR)/$(LIB).so
 
 clean:
-	rm -f $(OBJDIR) $(TEST)
-	rm -f $(BINDST)/$(BIN)
+	rm -f $(OBJDST) $(TSTDST)
 
 clean_all: clean
-	rm -f ./$(BINDST)/$(BIN) $(LIBDIR)/$(STATICLIB) $(LIBDIR)/$(SHAREDLIB)
+	rm -f $(BINDST)
+	rm -f $(LIBDIR)/*
+
+# --- source file statistics ---
+count_lines:
+	@find include/* src/* test/* | xargs wc -lc

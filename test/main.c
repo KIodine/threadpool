@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <sys/time.h>
 
-#include "src/threadpool.h"
+#include "threadpool.h"
 
 #define NL "\n"
 

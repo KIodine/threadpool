@@ -1,0 +1,17 @@
+{
+    "cmake.configureOnOpen": false,
+    "env": {
+        "project_include_path": [
+            "${workspaceFolder}",
+            "${workspaceFolder}/src"
+        ],
+        "project_compiler": "/usr/bin/gcc"
+    },
+    "configurations": {
+        "name": "project STP",
+        "includePath": ["${project_include_path",],
+        "defines": ["_GNU_SOURCE",],
+        "cStandard": "c99"
+    },
+    "version": 4
+}
