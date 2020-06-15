@@ -1,17 +1,6 @@
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <errno.h>
-#include <pthread.h>
-#include <assert.h>
-
-#include "list.h"
-#include "gate.h"
-
 #define MAX_WORKERS 128UL
 
 /*
@@ -19,25 +8,9 @@
       -> just let them die, hiding no bug
 */
 
-/*
-    TODO:
-    - Adjust project layout:
-        - src/ include/ test/ + [obj/ lib/ bin/]
-    - Move structure definition and internal-use headers
-      to `sthp_inc.h`.
-*/
+/* declare. */
+struct threadpool;
 
-struct threadpool {
-    unsigned int    n_workers;
-    unsigned int    n_idle;
-    unsigned int    is_paused;
-    struct list     threadq;
-    struct list     jobq;
-    unsigned int    pending_jobs;
-    pthread_mutex_t lock;
-    pthread_cond_t  cond;
-    struct gate    *wgate;
-};
 
 struct threadpool *threadpool_alloc(void);
 void threadpool_free(struct threadpool *pool);

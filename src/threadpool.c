@@ -1,18 +1,32 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <errno.h>
+#include <pthread.h>
+#include <assert.h>
+
+#include "list.h"
+#include "gate.h"
+
 #include "threadpool.h"
-
-#define NL "\n"
-
-
-/* follow `assert` method */
-#ifndef NDEBUG
-    #define MSG_PREFIX "[ThreadPool] "
-    #define debug_printf(fmt, ...) printf(MSG_PREFIX fmt, ##__VA_ARGS__)
-#else
-    #define MSG_PREFIX
-    #define debug_printf(ignore, ...) ((void)0)
-#endif
+#include "sthp_dbg.h"
 
 
+/* --- public --- */
+struct threadpool {
+    unsigned int    n_workers;
+    unsigned int    n_idle;
+    unsigned int    is_paused;
+    struct list     threadq;
+    struct list     jobq;
+    unsigned int    pending_jobs;
+    pthread_mutex_t lock;
+    pthread_cond_t  cond;
+    struct gate    *wgate;
+};
+
+/* --- internal --- */
 struct thread_ctx {
     pthread_t          tid;
     struct threadpool *pool;

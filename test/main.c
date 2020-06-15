@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <sys/time.h>
+#include <assert.h>
+#include <unistd.h>
+#include <time.h>
 
 #include "threadpool.h"
 
@@ -99,12 +101,10 @@ void basic_test2(void){
 }
 
 int main(void){
-    printf("--- begin basic test 1 ---"NL);
     basic_test();
-    printf("--- end basic test 1 ---"NL);
+    printf("--- basic test 1 passed ---"NL);
 
-    printf("--- begin basic test 2 ---"NL);
     basic_test2();
-    printf("--- end basic test 2 ---"NL);
+    printf("--- basic test 2 passed ---"NL);
     return 0;
 }

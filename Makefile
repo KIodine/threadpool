@@ -7,7 +7,7 @@ CREL_NOWARN = -Wno-unused-variable -Wno-unused-parameter
 CREL_FLAGS = -O2 -DNDEBUG $(CREL_NOWARN)
 CDBG_FLAGS := -g -O0
 
-LDFLAGS = -Wl,--version-script=./$(CFGDIR)/$(VERSCRIPT)
+LDFLAGS = -Wl,--version-script=$(CFGDIR)/$(VERSCRIPT)
 VERSCRIPT := version.map
 
 ARFLAGS := -rcs
@@ -68,13 +68,13 @@ shared: $(LIBSHARED_DST)
 # TODO: add `LDFLAGS`.
 $(LIBSHARED_DST): CFLAGS += -fPIC
 $(LIBSHARED_DST): $(CORE_OBJ_DST)
-	$(CC) $(CFLAGS) -shared -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
 
 $(LIBSTATIC_DST): $(CORE_OBJ_DST)
 	$(AR) $(ARFLAGS) $@ $^
 
 $(BINDST): $(TEST_OBJ_DST) $(LIBSHARED_DST)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ -Wl,-rpath=./$(LIBDIR) $^
+	$(CC) $(CFLAGS) -o $@ -Wl,-rpath=./$(LIBDIR) $^
 
 buildtest: $(BINDST)
 
