@@ -1,61 +1,100 @@
 CC := cc
-DBG := -O0 -g
-CFLAGS := -Wall -Wextra -pthread -D_REENTRANT
-
+AR := ar
 VG := valgrind
-VFLAGS := --show-leak-kinds=all --leak-check=full --verbose
 
-SRCDIR := ./src
-LIBDIR := ./lib
-BINDST := ./bin
-OBJS := list.o threadpool.o
-TEST := main.o
+CFLAGS := -Wall -Wextra -pthread -D_REENTRANT
+CREL_NOWARN = -Wno-unused-variable -Wno-unused-parameter
+CREL_FLAGS = -O2 -DNDEBUG $(CREL_NOWARN)
+CDBG_FLAGS := -g -O0
 
-OBJDIR := ${addprefix $(SRCDIR)/, $(OBJS)}
+LDFLAGS = -Wl,--version-script=$(CFGDIR)/$(VERSCRIPT)
+VERSCRIPT := version.map
 
-BIN := main
+ARFLAGS := -rcs
 
-STATICLIB := threadpool.a
-SHAREDLIB := threadpool.so
+VGFLAGS := --leak-check=full --show-leak-kinds=all --verbose
 
-ifdef DEBUG
-	CFLAGS += $(DBG)
+
+PROJ_NAME := sthp
+
+INCDIR := include
+SRCDIR := src
+TSTDIR := test
+LIBDIR := lib
+OBJDIR := obj
+BINDIR := bin
+CFGDIR := cfg
+
+CFLAGS += -I./$(INCDIR)
+
+ifeq ($(DEBUG), 1)
+	CFLAGS += $(CDBG_FLAGS)
 else
-	CFLAGS += -DNDEBUG
+	CFLAGS += $(CREL_FLAGS)
 endif
 
-# TODO: 
-#  	build from src, compile into obj,
-#	link to lib, executable in bin
 
-.PHONY: all run check clean clean_all
-_ := $(shell mkdir -p $(BINDST))
+CORE_OBJS := threadpool.o gate.o list.o
+TEST_OBJS := main.o
 
-all: test_build static shared
+BIN_NAME := $(PROJ_NAME)-test
+LIBSTATIC := lib$(PROJ_NAME).a
+LIBSHARED := lib$(PROJ_NAME).so
 
-test_build: $(OBJDIR) $(TEST)
-	$(CC) $(CFLAGS) $^ -o $(BINDST)/$(BIN)
+CORE_OBJ_DST := $(addprefix $(OBJDIR)/,$(CORE_OBJS))
+TEST_OBJ_DST := $(addprefix $(OBJDIR)/,$(TEST_OBJS))
 
-create_libdir:
-	@mkdir -p $(LIBDIR)
+LIBSTATIC_DST := $(LIBDIR)/$(LIBSTATIC)
+LIBSHARED_DST := $(LIBDIR)/$(LIBSHARED)
+BINDST := $(BINDIR)/$(BIN_NAME)
 
-static: $(OBJDIR) create_libdir
-	ar rcs $(LIBDIR)/$(STATICLIB) $(OBJDIR)
+.PHONY: clean clean_all
+all: shared static buildtest
 
-shared: $(OBJDIR) create_libdir
-	$(CC) -fPIC -shared $(OBJDIR) -o $(LIBDIR)/$(SHAREDLIB)
+$(CORE_OBJ_DST) $(TEST_OBJ_DST): |$(OBJDIR)
+$(OBJDIR):
+	mkdir -p ./$(OBJDIR) ./$(LIBDIR) ./$(BINDIR)
 
-run: test_build
-	./$(BINDST)/$(BIN)
+# --- start build objs ---
+$(CORE_OBJ_DST): $(OBJDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $^
 
-check: test_build
-	$(VG) $(VFLAGS) ./$(BINDST)/$(BIN)
+$(TEST_OBJ_DST): $(OBJDIR)/%.o: $(TSTDIR)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $^
+# --- end build objs ---
+static: $(LIBSTATIC_DST)
+shared: $(LIBSHARED_DST)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# TODO: add `LDFLAGS`.
+$(LIBSHARED_DST): CFLAGS += -fPIC
+$(LIBSHARED_DST): $(CORE_OBJ_DST)
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
+
+$(LIBSTATIC_DST): $(CORE_OBJ_DST)
+	$(AR) $(ARFLAGS) $@ $^
+
+$(BINDST): $(TEST_OBJ_DST) $(LIBSHARED_DST)
+	$(CC) $(CFLAGS) -o $@ -Wl,-rpath=./$(LIBDIR) $^
+
+buildtest: $(BINDST)
+
+runtest: buildtest
+	./$(BINDST)
+
+runcheck: buildtest
+	$(VG) $(VGFLAGS) ./$(BINDST)
 
 clean:
-	rm -f $(OBJDIR) $(TEST)
+	rm -f $(CORE_OBJ_DST)
+	rm -f $(TEST_OBJ_DST)
 
 clean_all: clean
-	rm -f ./$(BINDST)/$(BIN) $(LIBDIR)/$(STATICLIB) $(LIBDIR)/$(SHAREDLIB)
+	rm -f $(LIBSTATIC_DST)
+	rm -f $(LIBSHARED_DST)
+	rm -f $(BINDST)
+
+# --- dep rules ---
+gate.o: src/gate.c include/gate.h
+list.o: src/list.c include/list.h
+threadpool.o: src/threadpool.c include/threadpool.h include/list.h \
+ include/gate.h
