@@ -1,6 +1,6 @@
 # Scalable Threadpool in C
 
-A primitive threadpool implemente in C language.
+A primitive threadpool implement in C language.
 
 Note this code is currently Linux-specific (because of the use of `eventfd`).
 
@@ -11,7 +11,7 @@ Note this code is currently Linux-specific (because of the use of `eventfd`).
 - [License](#License)
 
 # Feature
-- Dynamically scalable (by using linked list)
+- Scalable thread numbers during runtime.
 
 # Build
 ```=

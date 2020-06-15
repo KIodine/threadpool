@@ -99,10 +99,12 @@ void basic_test2(void){
 }
 
 int main(void){
-    printf("--- begin basic test ---"NL);
+    printf("--- begin basic test 1 ---"NL);
     basic_test();
-    
+    printf("--- end basic test 1 ---"NL);
+
     printf("--- begin basic test 2 ---"NL);
     basic_test2();
+    printf("--- end basic test 2 ---"NL);
     return 0;
 }

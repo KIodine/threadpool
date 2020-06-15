@@ -21,10 +21,10 @@
 
 /*
     TODO:
-    - [X] STRICT fail check on alloc
-    - [X] use debug print (follow the `assert` disable method)
-    - [X] use C style comment
-    - [X] static and shared build makefile
+    - Adjust project layout:
+        - src/ include/ test/ + [obj/ lib/ bin/]
+    - Move structure definition and internal-use headers
+      to `sthp_inc.h`.
 */
 
 struct threadpool {

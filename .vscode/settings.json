@@ -1,9 +1,8 @@
 {
-    "cmake.configureOnOpen": false,
     "env": {
         "project_include_path": [
             "${workspaceFolder}",
-            "${workspaceFolder}/src"
+            "${workspaceFolder}/include"
         ],
         "project_compiler": "/usr/bin/gcc"
     },

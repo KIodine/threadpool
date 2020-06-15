@@ -1,0 +1,12 @@
+LIBSTHP_0.0.1 {
+    global:
+        threadpool_alloc;
+        threadpool_free;
+        threadpool_wait;
+        threadpool_submit;
+        threadpool_scale_to;
+        threadpool_pause;
+        threadpool_resume;
+    local:
+        *;
+};
