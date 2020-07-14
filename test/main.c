@@ -25,10 +25,21 @@ static int counter = 0;
 static
 void *job(void *arg){
     
+    /* Mocking a time consuming job. */
     nanosleep(&ts, NULL);
+    /* Just testing simple arithmetic op. */
     __sync_add_and_fetch(&counter, 1);
 
     return NULL;
+}
+
+static
+void submit_n(struct threadpool *tp, void*(*fp)(void*), int n){
+    assert(n >= 0);
+    for (int i = 0; i < n; ++i){
+        threadpool_submit(tp, fp, NULL);
+    }
+    return;
 }
 
 static
@@ -40,21 +51,19 @@ void basic_test(void){
 
     threadpool_scale_to(tp, 4UL);
 
-    for (uint64_t i = 0; i < 32; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
-    threadpool_pause(tp);
-    assert(counter == 32);
-
+    submit_n(tp, job, 32);
+    threadpool_wait(tp);
     
-    for (uint64_t i = 32; i < 64; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
+    assert(counter == 32);
+    
+    submit_n(tp, job, 32);
+
+    threadpool_pause(tp);
     threadpool_resume(tp);
 
-    for (uint64_t i = 0; i < 32; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
+    threadpool_resume(tp);
+
+    submit_n(tp, job, 64);
     threadpool_wait(tp);
 
     assert(counter == 128);
@@ -73,24 +82,20 @@ void basic_test2(void){
     tp = threadpool_alloc();
     threadpool_scale_to(tp, 4UL);
 
-    for (;i < 16; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
+    submit_n(tp, job, 16);
 
-    threadpool_pause(tp);
+    threadpool_wait(tp);
     assert(counter == 16);
     
-    for (;i < 32; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
+    submit_n(tp, job, 16);
+
     threadpool_scale_to(tp, 8UL);
     threadpool_resume(tp);
     
     threadpool_scale_to(tp, 2UL);
 
-    for (;i < 48; ++i){
-        threadpool_submit(tp, job, (void*)i);
-    }
+    submit_n(tp, job, 16);
+
     threadpool_wait(tp);
     assert(counter == 48);
 

@@ -14,7 +14,7 @@ ARFLAGS := -rcs
 
 VGFLAGS := --leak-check=full --show-leak-kinds=all --verbose
 
-
+# The name for final object generate.
 PROJ_NAME := sthp
 
 INCDIR := include
@@ -35,6 +35,7 @@ endif
 
 
 CORE_OBJS := threadpool.o gate.o list.o
+# TODO: Modify to adapt multiple tests.
 TEST_OBJS := main.o
 
 BIN_NAME := $(PROJ_NAME)-test
@@ -65,7 +66,7 @@ $(TEST_OBJ_DST): $(OBJDIR)/%.o: $(TSTDIR)/%.c
 static: $(LIBSTATIC_DST)
 shared: $(LIBSHARED_DST)
 
-# TODO: add `LDFLAGS`.
+
 $(LIBSHARED_DST): CFLAGS += -fPIC
 $(LIBSHARED_DST): $(CORE_OBJ_DST)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
