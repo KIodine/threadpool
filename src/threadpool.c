@@ -99,6 +99,8 @@ void *worker(void *arg){
                 pthread_mutex_unlock(lock);
                 break;
             } else {
+                /*  Gate is unlocked if workers spawn before any job
+                    submitted. */
                 if (pool->n_idle == pool->n_workers){
                     /* the last worker here would unlock the gate,
                         letting the waiters go. */
@@ -222,6 +224,7 @@ void threadpool_wait(struct threadpool *pool){
 
     debug_printf("waiting for jobs complete"NL);
 
+    /* Mainthread. */
     /* Wait until last worker opens the waiting "gate". */
     gate_wait(pool->wgate);
     
@@ -269,20 +272,28 @@ int threadpool_resume(struct threadpool *pool){
 int threadpool_submit(struct threadpool *pool, void *(*func)(void*), void *arg){
     struct jobinfo *tmp_job;
 
-    pthread_mutex_lock(&pool->lock);
-    
     tmp_job = calloc(1, sizeof(struct jobinfo));
     tmp_job->func = func;
-    tmp_job->arg = arg;
+    tmp_job->arg  = arg;
+    
+    pthread_mutex_lock(&pool->lock);
+    
     list_push(&pool->jobq, &tmp_job->node);
     pool->pending_jobs++;
 
-    debug_printf("submit job"NL);
+    // debug_printf("submit job"NL);
 
     if (!pool->is_paused && pool->n_idle != 0){
-        if ((pool->n_idle == pool->n_workers) && (pool->pending_jobs == 0)){
-            /* every worker is waiting, lock the gate so the blocking
-               API works. */
+        /* Threadpool is running and have idling workers. */
+        if ((pool->n_idle == pool->n_workers) && (pool->pending_jobs != 0)){
+            /* If 1)all worker are idling and 2)there is pending job.
+                If all workers are idling, the gate must have been
+                unlocked, lock the gate, so waiting routines work.
+            */
+            /* BUGFIX
+                Erroneously not locking the gate while there is still
+                job.
+            */
             /*
                 Only several functions can change the state of "gate":
                 1) `submit` and `resume` lock the gate.
